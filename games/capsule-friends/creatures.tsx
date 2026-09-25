@@ -1,39 +1,28 @@
 "use client";
 
 /**
- * Capsule Friends - procedural collectible artwork.
+ * Capsule Friends - artwork.
  *
- * Every Capsule Friend is drawn from a deterministic 16x16 symmetric "genome"
- * derived from its outcome index. Nothing is fetched: the album art is generated
- * in the sandbox, so it loads instantly and works offline. The player's own Rare
- * Friend keeps its canonical on-chain pixels (rendered separately in index.tsx).
+ * Capsule Friends are deterministic 16x16 pixel masks (same treatment as the
+ * canonical Rare Friends sprites), padded to the SDK's 24x16 item-art frame so
+ * `ItemArt` and `RewardReveal` can draw them. The capsule machine is hand-drawn
+ * line art, matching the Rare Friends paper/ink look.
  */
 
 import { useEffect, useRef } from "react";
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
-export type RarityStyle = Readonly<{
-  label: string;
-  body: string;
-  shade: string;
-  accent: string;
-  glow: string;
-  ink: string;
-}>;
+/** Rarity per game.json outcome index (1-based outcome IDs). */
+export const CAPSULE_RARITIES: readonly Rarity[] = [
+  ...Array<Rarity>(6).fill("common"),
+  ...Array<Rarity>(5).fill("uncommon"),
+  ...Array<Rarity>(4).fill("rare"),
+  ...Array<Rarity>(3).fill("epic"),
+  ...Array<Rarity>(2).fill("legendary"),
+];
 
-export const RARITY: Readonly<Record<Rarity, RarityStyle>> = Object.freeze({
-  common: { label: "Common", body: "#9aa4b2", shade: "#3c4654", accent: "#d3dbe6", glow: "#e2e8f0", ink: "#111827" },
-  uncommon: { label: "Uncommon", body: "#37c98b", shade: "#0f6b4a", accent: "#a4f2ce", glow: "#86efac", ink: "#062f20" },
-  rare: { label: "Rare", body: "#3fa9f5", shade: "#0b4f86", accent: "#b3ddff", glow: "#7dd3fc", ink: "#062a47" },
-  epic: { label: "Epic", body: "#b06cf0", shade: "#57208f", accent: "#e2c6ff", glow: "#d8b4fe", ink: "#2c0a4d" },
-  legendary: { label: "Legendary", body: "#f5b942", shade: "#8a5300", accent: "#ffe8a8", glow: "#fde68a", ink: "#3d2400" },
-});
-
-export const RARITY_ORDER: readonly Rarity[] = ["common", "uncommon", "rare", "epic", "legendary"];
-
-/** Per-item flavour text. Index matches game.json outcome order. */
-export const CREATURE_BLURB: readonly string[] = [
+export const CAPSULE_BLURB: readonly string[] = [
   "A sleepy stone pal that naps in the warm shade.",
   "Dust-winged drifter, fond of lamplight.",
   "A wobbling jelly droplet. Do not shake.",
@@ -56,6 +45,14 @@ export const CREATURE_BLURB: readonly string[] = [
   "The first friend. It remembers everyone.",
 ];
 
+const IDS: readonly string[] = [
+  "pebblin", "moff", "bloop", "tinkertot", "mossnip", "buzzle",
+  "emberkit", "frostfin", "galehoof", "tideling", "duskmoth",
+  "prismlet", "hollowpup", "cellulo", "asymmetra",
+  "colossling", "maskoracle", "genesium",
+  "aurum-frame", "rare-genesis",
+];
+
 function mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
@@ -66,40 +63,25 @@ function mulberry32(seed: number) {
   };
 }
 
-/**
- * Build a 16x16 creature mask. Characters:
- *   B body, A accent/belly, S outline, W eye white, K pupil, . empty
- */
+/** Build a deterministic 16x16 creature mask. Characters: B body, A accent, S outline, W eye, K pupil, . empty. */
 export function creatureMask(seed: number): string[] {
   const rand = mulberry32(seed * 2654435761 + 0x9e3779b9);
   const size = 16;
   const grid: string[][] = Array.from({ length: size }, () => Array<string>(size).fill("."));
-
   const cx = 7.5;
   const cy = 8 + Math.floor(rand() * 2);
   const rx = 4.5 + rand() * 2.2;
   const ry = 4.2 + rand() * 1.6;
-
   const inside = (x: number, y: number) => {
     const dx = (x - cx) / rx;
     const dy = (y - cy) / ry;
     return dx * dx + dy * dy <= 1;
   };
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (inside(x, y)) grid[y][x] = "B";
 
-  // Body fill.
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (inside(x, y)) grid[y][x] = "B";
-    }
-  }
-
-  // Feet (symmetric).
   const footY = Math.min(size - 1, Math.round(cy + ry));
-  for (const x of [Math.round(cx) - 2, Math.round(cx) + 1]) {
-    if (x >= 0 && x < size && footY < size) grid[footY][x] = "S";
-  }
+  for (const x of [Math.round(cx) - 2, Math.round(cx) + 1]) if (x >= 0 && x < size && footY < size) grid[footY][x] = "S";
 
-  // Ears / antennae (symmetric, mirrored exactly).
   const style = Math.floor(rand() * 3);
   const topY = Math.max(0, Math.round(cy - ry));
   if (style === 0) {
@@ -113,25 +95,16 @@ export function creatureMask(seed: number): string[] {
     }
   }
 
-  // Belly accent patch.
   if (rand() > 0.35) {
     for (let y = Math.round(cy); y <= Math.round(cy + ry) - 1; y++) {
-      for (let x = Math.round(cx) - 1; x <= Math.round(cx); x++) {
-        if (grid[y]?.[x] === "B") grid[y][x] = "A";
-      }
+      for (let x = Math.round(cx) - 1; x <= Math.round(cx); x++) if (grid[y]?.[x] === "B") grid[y][x] = "A";
     }
   }
 
-  // Eyes (2x2 white + pupil), mirrored around the 7.5 centre.
   const eyeY = Math.max(1, Math.round(cy - ry * 0.45));
-  const eyeLeft = 3 + Math.floor(rand() * 2); // columns 3..4 (mirror 12..11)
-  const eyes = [
-    [eyeLeft, eyeY],
-    [size - 1 - (eyeLeft + 1), eyeY],
-  ] as const;
-  for (const [ex, ey] of eyes) {
-    for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) if (grid[ey + dy]) grid[ey + dy][ex + dx] = "W";
-  }
+  const eyeLeft = 3 + Math.floor(rand() * 2);
+  const eyes = [[eyeLeft, eyeY], [size - 1 - (eyeLeft + 1), eyeY]] as const;
+  for (const [ex, ey] of eyes) for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) if (grid[ey + dy]) grid[ey + dy][ex + dx] = "W";
   const pupilOffset = rand() > 0.5 ? 0 : 1;
   for (const [ex, ey] of eyes) {
     const px = ex + pupilOffset;
@@ -139,63 +112,78 @@ export function creatureMask(seed: number): string[] {
     if (grid[py]?.[px] === "W") grid[py][px] = "K";
   }
 
-  // Mouth.
   const mouthY = Math.min(size - 1, eyeY + 3);
   for (let x = Math.round(cx) - 1; x <= Math.round(cx); x++) if (grid[mouthY]?.[x] === "B" || grid[mouthY]?.[x] === "A") grid[mouthY][x] = "S";
 
-  // Outline pass: any empty cell touching a body cell becomes outline.
   const bodyish = (x: number, y: number) => x >= 0 && y >= 0 && x < size && y < size && ["B", "A", "W", "K"].includes(grid[y][x]);
   const outline: Array<[number, number]> = [];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (grid[y][x] !== ".") continue;
-      if (bodyish(x - 1, y) || bodyish(x + 1, y) || bodyish(x, y - 1) || bodyish(x, y + 1)) outline.push([x, y]);
-    }
-  }
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (grid[y][x] === "." && (bodyish(x - 1, y) || bodyish(x + 1, y) || bodyish(x, y - 1) || bodyish(x, y + 1))) outline.push([x, y]);
   for (const [x, y] of outline) grid[y][x] = "S";
 
   return grid.map(row => row.join(""));
 }
 
-const CHAR_COLOR: Readonly<Record<string, keyof RarityStyle>> = Object.freeze({
-  B: "body",
-  A: "accent",
-  S: "shade",
-  W: "body",
-  K: "ink",
-});
-
-/** Pixel canvas that renders one Capsule Friend. */
-export function Creature({ seed, rarity, size = 64, title }: { seed: number; rarity: Rarity; size?: number; title?: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) return;
-    const palette = RARITY[rarity];
-    const rows = creatureMask(seed);
-    const scale = 1; // canvas backing store is 16x16, CSS scales it up crisply.
-    canvas.width = 16;
-    canvas.height = 16;
-    context.clearRect(0, 0, 16, 16);
-    context.imageSmoothingEnabled = false;
-    for (let y = 0; y < 16; y++) {
-      for (let x = 0; x < 16; x++) {
-        const char = rows[y][x];
-        if (char === ".") continue;
-        let color: string;
-        if (char === "W") color = "#ffffff";
-        else color = palette[CHAR_COLOR[char]];
-        context.fillStyle = color;
-        context.fillRect(x * scale, y * scale, scale, scale);
-      }
-    }
-  }, [seed, rarity]);
-  return <canvas ref={ref} className="capsule-creature" width={16} height={16} style={{ width: size, height: size, imageRendering: "pixelated" }} role="img" aria-label={title ?? "Capsule Friend"} />;
+/** Convert a 16x16 mask into the SDK's monochrome 24x16 item-art rows. */
+export function capsuleRows(index: number): string[] {
+  const mask = creatureMask(index + 1);
+  return mask.map(row => `    ${[...row].map(char => (char === "." ? " " : "#")).join("")}    `);
 }
 
-/** The player's canonical Rare Friend pixels, drawn with the SDK's halo treatment. */
-export function FriendPortrait({ rows, size = 160, className = "", label = "Your Rare Friend" }: { rows: readonly string[]; size?: number; className?: string; label?: string }) {
+export const CAPSULE_ART: readonly { id: string; rarity: Rarity; rows: string[] }[] = IDS.map((id, index) => ({
+  id,
+  rarity: CAPSULE_RARITIES[index],
+  rows: capsuleRows(index),
+}));
+
+/** Pixel capsule used for the consumable choice. */
+export const CAPSULE_ICON_ROWS: readonly string[] = [
+  "                        ",
+  "        ########        ",
+  "      ##........##      ",
+  "     #............#     ",
+  "    #..............#    ",
+  "    #..............#    ",
+  "    #..............#    ",
+  "    #..............#    ",
+  "    #..............#    ",
+  "    ################    ",
+  "    ################    ",
+  "    ################    ",
+  "    ################    ",
+  "                        ",
+  "                        ",
+  "                        ",
+];
+
+/** Line-art capsule machine. Purely decorative; shown as the activity/working art. */
+export function CapsuleMachine({ ready = false }: { ready?: boolean }) {
+  return (
+    <svg className="cf-machine-art" viewBox="0 0 120 132" fill="none" stroke="currentColor" strokeWidth="2" shapeRendering="crispEdges" aria-hidden="true" data-ready={ready}>
+      {/* glass dome */}
+      <circle cx="60" cy="44" r="33" />
+      <path d="M27 44h66M60 11v66" strokeDasharray="2 4" />
+      {/* capsules inside */}
+      <circle cx="46" cy="34" r="6" />
+      <circle cx="70" cy="30" r="6" />
+      <circle cx="60" cy="52" r="6" />
+      <circle cx="38" cy="52" r="5" />
+      <circle cx="80" cy="50" r="5" />
+      {/* cabinet */}
+      <rect x="22" y="77" width="76" height="50" />
+      <rect x="30" y="85" width="30" height="16" />
+      <path d="M34 93h22" />
+      {/* chute */}
+      <rect x="66" y="106" width="24" height="14" />
+      {/* crank */}
+      <circle cx="86" cy="92" r="7" />
+      <path d="M86 92h12v-1M98 91v-6" />
+      {ready && <path d="M18 20 5 12M102 20l13-8M6 44H0M114 44h6M20 70 8 78M100 70l12 8" />}
+    </svg>
+  );
+}
+
+/** The player's canonical Rare Friend pixels, drawn with the SDK's white halo. */
+export function FriendPortrait({ rows, size = 150, className = "", label = "Your Rare Friend" }: { rows: readonly string[]; size?: number; className?: string; label?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -206,7 +194,6 @@ export function FriendPortrait({ rows, size = 160, className = "", label = "Your
     context.clearRect(0, 0, 16, 16);
     context.imageSmoothingEnabled = false;
     const pixels = rows.flatMap((row, py) => [...row].flatMap((pixel, px) => (pixel === "#" ? [[px, py] as const] : [])));
-    // White one-pixel halo behind the black mask, matching the SDK renderer.
     context.save();
     context.beginPath();
     context.rect(0, 0, 16, 16);
@@ -217,5 +204,13 @@ export function FriendPortrait({ rows, size = 160, className = "", label = "Your
     for (const [px, py] of pixels) context.fillRect(px, py, 1, 1);
     context.restore();
   }, [rows]);
-  return <canvas ref={ref} className={`capsule-friend ${className}`} style={{ width: size, height: size, imageRendering: "pixelated" }} role="img" aria-label={label} />;
+  return <canvas ref={ref} className={`cf-friend-pixels ${className}`.trim()} style={{ width: size, height: size, imageRendering: "pixelated" }} role="img" aria-label={label} />;
+}
+
+export function SoundIcon({ muted }: { muted: boolean }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m11 4-5 5H3v6h3l5 5z" />{muted ? <path d="m15 9 6 6m0-6-6 6" /> : <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />}</svg>;
+}
+
+export function SettingsIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6m8 0v6m-6 0v6" /></svg>;
 }
