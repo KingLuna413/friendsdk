@@ -1,0 +1,27 @@
+{
+  "name": "Capsule Friends",
+  "consumable": "Capsule",
+  "price": "1000000000000000000",
+  "outcomes": [
+    { "name": "Pebblin", "chanceBps": 900, "reward": "500000000000000000" },
+    { "name": "Moff", "chanceBps": 900, "reward": "500000000000000000" },
+    { "name": "Bloop", "chanceBps": 900, "reward": "500000000000000000" },
+    { "name": "Tinkertot", "chanceBps": 900, "reward": "500000000000000000" },
+    { "name": "Mossnip", "chanceBps": 900, "reward": "500000000000000000" },
+    { "name": "Buzzle", "chanceBps": 900, "reward": "500000000000000000" },
+    { "name": "Emberkit", "chanceBps": 570, "reward": "600000000000000000" },
+    { "name": "Frostfin", "chanceBps": 570, "reward": "600000000000000000" },
+    { "name": "Galehoof", "chanceBps": 570, "reward": "600000000000000000" },
+    { "name": "Tideling", "chanceBps": 570, "reward": "600000000000000000" },
+    { "name": "Duskmoth", "chanceBps": 570, "reward": "600000000000000000" },
+    { "name": "Prismlet", "chanceBps": 300, "reward": "1500000000000000000" },
+    { "name": "Hollowpup", "chanceBps": 300, "reward": "1500000000000000000" },
+    { "name": "Cellulo", "chanceBps": 300, "reward": "1500000000000000000" },
+    { "name": "Asymmetra", "chanceBps": 300, "reward": "1500000000000000000" },
+    { "name": "Colossling", "chanceBps": 150, "reward": "4000000000000000000" },
+    { "name": "Maskoracle", "chanceBps": 150, "reward": "4000000000000000000" },
+    { "name": "Genesium", "chanceBps": 150, "reward": "4000000000000000000" },
+    { "name": "Aurum Frame", "chanceBps": 50, "reward": "10000000000000000000" },
+    { "name": "Rare Genesis", "chanceBps": 50, "reward": "10000000000000000000" }
+  ]
+}
