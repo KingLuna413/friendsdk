@@ -545,6 +545,64 @@
   background: var(--signal);
   border-color: var(--ink);
 }
+.cf-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+.cf-ledger h3 {
+  font: 600 15px/1.2 var(--game-body);
+}
+.cf-ledger dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin: 0;
+}
+.cf-ledger dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px dotted #1114;
+}
+.cf-ledger dt {
+  color: #666;
+  font-size: 11px;
+}
+.cf-ledger dd {
+  margin: 0;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cf-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cf-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 9px;
+  border: 1px solid var(--ink);
+  color: #666;
+  font-size: 10px;
+}
+.cf-badge small {
+  font-size: 8px;
+}
+.cf-badge[data-earned="true"] {
+  background: var(--signal);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
 
 /* ---------- text panels ---------- */
 .cf-text-panel {
