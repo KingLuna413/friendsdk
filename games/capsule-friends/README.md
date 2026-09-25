@@ -1,18 +1,17 @@
 # Capsule Friends
 
-A Rare Friends gacha arcade. Your selected, verified Rare Friend runs the capsule
-machine: load a capsule, crank it, and reveal one of twenty collectible Capsule
-Friends across five rarity tiers. Keep them in your album or redeem them for
-simulated RF.
+A Rare Friends gacha **yard**. Walk your selected, verified Rare Friend around a
+paper-and-ink garden with seven stations: a **key shop**, four **capsule
+machines** of rising luck, a **capsule vault**, and the **capsule album**. Buy
+keys, crank a machine, and reveal collectible Capsule Friends across five rarity
+tiers.
 
-FriendSDK **v0.1.2**, using the same canonical presentation as the SDK's fishing
-example — `ExperiencePanel`, `RewardReveal`, `GameHud`, `ActivityPrompt` and
-`GameMenu` — on a paper-and-ink theme: off-white paper, 1px black rules, pixel
-artwork, and signal green (`#CCFF00`) reserved for the primary action and
-rarity reveals. All balances, capsules, pulls and redemptions are **simulated
-preview** values that belong to the selected Friend for the runtime session only.
-An eligible hardwired Generations NFT (generation ≥ 1) on Robinhood mainnet is
-still required to play.
+FriendSDK **v0.1.2**, using the canonical SDK world renderer and chrome:
+`GameWorld` (line-art terrain, paths, collision and the Friend's on-chain
+sprites), `ExperiencePanel`, `RewardReveal`, `GameHud`, `GameMenu`. All balances,
+keys, pulls and redemptions are **simulated preview** values that belong to the
+selected Friend for the runtime session only. An eligible hardwired Generations
+NFT (generation ≥ 1) on Robinhood mainnet is still required to play.
 
 ## Run it
 
@@ -44,33 +43,43 @@ node scripts/dev-game.mjs test  games/capsule-friends --screenshot ./artifacts/c
 
 ## Controls
 
-The scene shows your Rare Friend next to the capsule machine. Interact with the
-machine chip (or the quick-bar on phones); menus handle everything else.
-
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Capsule machine | `E` or `M` | Tap the **Capsule machine** chip / quick-bar |
-| Crank ×10 | `X` (needs 10 capsules) | Tap **Crank ×10** |
-| Capsule album | `C` | Tap the album button in the HUD |
-| Odds | `O` | Settings → Odds |
-| Settings (sound, reduce motion) | — | Settings button |
+| Walk | `WASD` / arrow keys | Tap a destination |
+| Use a station | `E` when the chip is green | Tap the station chip |
 
-Inside the machine: choose a capsule → **Crank · 1 capsule** → **Open capsule**
-→ **Keep friend** or **Redeem**. Cash out any time from the album.
+The station chips light up green when your Friend is close enough. Walk to the
+**Key shop** to buy keys, then to a **machine** to crank, the **vault** to inspect
+epic+ friends, or the **album** to redeem.
 
 ## Rules
 
-- One capsule costs **1 RF**. Loading a capsule reserves **10 RF** of backing
-  (the highest prize) until it is opened; new loads pause when free backing runs
-  out. This is the SDK's supplied chance-game accounting.
-- Cranking opens exactly one capsule and reveals exactly one Capsule Friend. Each
-  pull is independent: no pity timer, no reroll. **Crank ×10** opens ten at once
-  in a single confirmed action.
-- Keep a friend to add it to your album, or redeem it for its fixed RF value. Kept
-  friends hold their value with no expiry. The album tracks unique friends
-  (of 20) and total kept friends.
-- Expected return is **0.901 RF** per 1 RF capsule (≈ **90.1%**). The remaining
-  ≈ 9.9% is the community pool edge. Maximum prize is **10 RF**.
+- **Keys**: bought at the Key shop for **1 RF** each. One key reserves **10 RF**
+  of backing (the highest prize) until it is spent; sales pause when free backing
+  runs out. This is the SDK's supplied chance-game accounting.
+- **Machines**: each machine spends its own number of keys per crank and draws
+  that many Capsule Friends in one pull.
+
+  | Machine | Keys per crank | Draws | Unlock |
+  | --- | --: | --: | --- |
+  | Machine ×1 | 1 | 1 | always |
+  | Machine ×2 | 2 | 2 | always |
+  | Machine ×4 | 4 | 4 | always |
+  | Machine ×8 | 8 | 8 | vault level 1 |
+
+  Every draw is independent: no pity timer, no reroll. The rarest draw of the
+  pull leads the reveal; **every** draw is kept in the album. Higher machines
+  give more chances at a rare friend in a single crank at the same expected
+  value per key.
+- **Vault**: epic and legendary friends are listed in the vault with a short
+  **incubation** countdown. The timer is cosmetic and session-only; owned friends
+  are always safe and redeemable from the album. Each **vault level** (one per
+  rare-or-better friend discovered) unlocks a luckier machine — level 1 unlocks
+  **Machine ×8**.
+- **Album**: keep friends for their fixed RF value, or redeem any time. No
+  expiry. Tracks unique friends (of 20) and total album value.
+- Expected return is **0.901 RF per key** (≈ **90.1%**). The remaining ≈ 9.9% is
+  the community pool edge. Maximum prize is **10 RF**.
 
 ### Capsule Friends, odds and redemption values
 
@@ -100,24 +109,32 @@ Inside the machine: choose a capsule → **Crank · 1 capsule** → **Open capsu
 Tier totals: common 54%, uncommon 28.5%, rare 12%, epic 4.5%, legendary 1%.
 Weights total 10,000 basis points.
 
+## Capability notes
+
+FriendSDK v0.1.2's supplied chance game has **one** consumable and **one** weighted
+outcome table, and no persistence, upgrade or extra-currency APIs. This game
+therefore expresses "luck" through the number of **draws per crank** rather than
+separate odds tables, and the vault incubation is a session-only presentation.
+Separate key types, per-machine odds tables, persistent timers and on-chain vault
+upgrades are future integration work, not part of this preview.
+
 ## Artwork
 
-- The player's Rare Friend uses its **canonical on-chain 16 × 16 pixels**, loaded
-  through the SDK sprite reader and drawn with the SDK's white-halo treatment.
+- The player's Rare Friend uses its **canonical on-chain pixels**, rendered by
+  the SDK world renderer (`GameWorld`) with the SDK's white-halo treatment.
 - Capsule Friends are **procedurally generated** deterministic 16 × 16 pixel
-  masks in `creatures.tsx`, padded to the SDK's 24 × 16 item-art frame. They are
-  drawn monochrome by `ItemArt`/`RewardReveal`, so no external image files are
-  needed and the art loads instantly.
+  masks in `creatures.tsx`, padded to the SDK's 24 × 16 item-art frame and drawn
+  monochrome by `ItemArt`/`RewardReveal`.
 - The capsule machine is hand-drawn line art, matching the Rare Friends
-  paper-and-ink look. Rarity reads from the SDK's rarity chip and reveal
-  particles, with signal green reserved for rare and above.
+  paper-and-ink look. Rarity reads from the SDK rarity chip and reveal particles,
+  with signal green reserved for rare and above.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `index.tsx` | Scene, machine flow, ×10 pull, album, odds, settings |
-| `game.json` | Capsule price and the 20-outcome weighted table |
-| `creatures.tsx` | Pixel-mask art, line-art capsule machine, Friend portrait |
+| `index.tsx` | World, stations, key shop, machines, vault, album, odds, settings |
+| `game.json` | Key price and the 20-outcome weighted table |
+| `creatures.tsx` | Pixel-mask art, line-art capsule machine, icons |
 | `style.css` | Sandboxed game UI (paper/ink theme) |
 | `host.css` | Trusted runtime layout (portrait frame on phones) |
