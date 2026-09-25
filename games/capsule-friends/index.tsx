@@ -4,25 +4,63 @@ import { useEffect, useRef, useState } from "react";
 import type { GameComponentProps } from "@rarefriends/friendsdk/runtime";
 import { maximumPrize, type GamePlay, type GameSnapshot } from "@rarefriends/friendsdk/game";
 import { createFriendSoundKit, type FriendSoundCue, type FriendSoundKit } from "@rarefriends/friendsdk/sounds";
-import { createFriendReader, spriteFrame, type GenerationSprites } from "@rarefriends/friendsdk/sprites";
-import { ActivityPrompt, ExperiencePanel, GameHud, ItemArt, formatGameAmount } from "@rarefriends/friendsdk/ui";
+import { ExperiencePanel, GameHud, ItemArt, formatGameAmount } from "@rarefriends/friendsdk/ui";
 import { GameMenu } from "@rarefriends/friendsdk/frame";
+import { GameWorld, type GameWorldInteraction } from "@rarefriends/friendsdk/world-view";
+import { getWorldPreset, validateWorld } from "@rarefriends/friendsdk/world";
 import type { GameItem } from "@rarefriends/friendsdk/items";
-import { CAPSULE_ART, CAPSULE_BLURB, CAPSULE_ICON_ROWS, CapsuleMachine, FriendPortrait, SoundIcon, SettingsIcon } from "./creatures.js";
+import { CAPSULE_ART, CAPSULE_BLURB, CAPSULE_ICON_ROWS, CapsuleMachine, SoundIcon, SettingsIcon, type Rarity } from "./creatures.js";
 import "@rarefriends/friendsdk/ui.css";
 import "@rarefriends/friendsdk/reveal.css";
 import "@rarefriends/friendsdk/frame.css";
+import "@rarefriends/friendsdk/world-view.css";
 import "./style.css";
 
 const RF = 10n ** 18n;
 const rf = (amount: bigint) => `${formatGameAmount(amount, 18)} RF`;
 const currency = { symbol: "RF", decimals: 18 };
 
-type Screen = "scene" | "machine" | "shop" | "reveal" | "album" | "odds" | "settings" | "burst";
+/** Machine tiers: keys per pull = draws per pull. Higher tiers concentrate luck into one result. */
+const MACHINES = [
+  { id: "m1", label: "Machine ×1", tier: 1, unlock: 0 },
+  { id: "m2", label: "Machine ×2", tier: 2, unlock: 0 },
+  { id: "m3", label: "Machine ×4", tier: 4, unlock: 0 },
+  { id: "m4", label: "Machine ×8", tier: 8, unlock: 1 },
+] as const;
 
-const cueFor = (value: bigint): FriendSoundCue => (value >= 5n * RF ? "reveal-legendary" : value >= RF ? "reveal-rare" : "reveal-common");
+const isRarePlus = (rarity: Rarity) => rarity === "rare" || rarity === "epic" || rarity === "legendary";
+const isEpicPlus = (rarity: Rarity) => rarity === "epic" || rarity === "legendary";
+const cueForRarity = (rarity: Rarity): FriendSoundCue => (rarity === "legendary" ? "reveal-legendary" : rarity === "rare" || rarity === "epic" ? "reveal-rare" : "reveal-common");
 
-/** The gacha arcade. The runtime supplies the verified Friend and the fixed preview client. */
+type Screen = "world" | "shop" | "machine" | "vault" | "album" | "odds" | "settings";
+
+/** Walkable paper yard. The SDK world renderer draws the terrain, props and the canonical Friend. */
+const baseYard = getWorldPreset("01-garden-oval-complete");
+const yard = validateWorld({
+  ...baseYard,
+  props: [
+    ...baseYard.props,
+    { type: "terminal", x: 200, y: 110 },
+    { type: "crate", x: 95, y: 190 },
+    { type: "crate", x: 120, y: 268 },
+    { type: "terminal", x: 235, y: 316 },
+    { type: "crate", x: 356, y: 300 },
+    { type: "terminal", x: 452, y: 224 },
+    { type: "crate", x: 452, y: 120 },
+  ],
+  actors: [],
+});
+const spawn = [288, 192] as const;
+const worldInteractions: readonly GameWorldInteraction[] = [
+  { id: "shop", label: "Key shop", position: [200, 110], reach: 72, labelOffset: -110 },
+  { id: "vault", label: "Capsule vault", position: [95, 190], reach: 72, labelOffset: -60 },
+  { id: "m1", label: "Machine ×1", position: [120, 268], reach: 72, labelOffset: 70 },
+  { id: "m2", label: "Machine ×2", position: [235, 316], reach: 72, labelOffset: 120 },
+  { id: "m3", label: "Machine ×4", position: [356, 300], reach: 72, labelOffset: 70 },
+  { id: "m4", label: "Machine ×8", position: [452, 224], reach: 72, labelOffset: 40 },
+  { id: "album", label: "Capsule album", position: [452, 120], reach: 72, labelOffset: -40 },
+];
+
 export default function CapsuleFriends({ friendId, client, paused }: GameComponentProps) {
   const definition = client.definition;
   const maxPrize = maximumPrize(definition);
@@ -35,28 +73,26 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
   const capsuleItem: GameItem = { id: "capsule", name: definition.consumable, rarity: "Basic", art: { rows: [...CAPSULE_ICON_ROWS] } };
 
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
-  const [screen, setScreen] = useState<Screen>("scene");
-  const [quantity, setQuantity] = useState("1");
+  const [screen, setScreen] = useState<Screen>("world");
+  const [machineTier, setMachineTier] = useState<number>(1);
+  const [quantity, setQuantity] = useState("5");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<GamePlay | null>(null);
-  const [burst, setBurst] = useState<readonly GamePlay[] | null>(null);
+  const [drewCount, setDrewCount] = useState(1);
   const [cranking, setCranking] = useState(false);
   const [ready, setReady] = useState(false);
   const [muted, setMuted] = useState(true);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [sprites, setSprites] = useState<GenerationSprites | null>(null);
-  const [spriteState, setSpriteState] = useState<"loading" | "ready" | "error">("loading");
-  const [spriteRevision, setSpriteRevision] = useState(0);
-  const [frame, setFrame] = useState(0);
+  const [seals, setSeals] = useState<Record<number, number>>({});
+  const [now, setNow] = useState(() => Date.now());
+  const [worldRevision, setWorldRevision] = useState(0);
 
   const sound = useRef<FriendSoundKit | null>(null);
   const locked = useRef(false);
   const alive = useRef(true);
-  const hot = useRef({ screen: "scene" as Screen, busy: false, paused: false, capsules: 0n });
-  const tenRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     alive.current = true;
@@ -70,48 +106,16 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
   }, [client]);
 
   useEffect(() => {
-    let live = true;
-    setSpriteState("loading");
-    setSprites(null);
-    createFriendReader().read(friendId).then(value => { if (live) { setSprites(value); setSpriteState("ready"); } }).catch(() => { if (live) setSpriteState("error"); });
-    return () => { live = false; };
-  }, [friendId, spriteRevision]);
-
-  useEffect(() => {
-    if (!sprites || reduceMotion || paused || screen !== "scene") { setFrame(0); return; }
-    let raf = 0;
-    let last = -1;
-    const start = performance.now();
-    const loop = (now: number) => {
-      const value = Math.floor((now - start) / 220) % 8;
-      if (value !== last) { last = value; setFrame(value); }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [sprites, reduceMotion, paused, screen]);
+    if (screen !== "vault") return;
+    const timer = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, [screen]);
 
   useEffect(() => {
     if (!cranking || !result) return;
     const timer = setTimeout(() => { setReady(true); sound.current?.play("action-ready"); }, reduceMotion ? 0 : 800);
     return () => clearTimeout(timer);
   }, [cranking, result, reduceMotion]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const state = hot.current;
-      if (state.paused || state.busy || state.screen !== "scene") return;
-      const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-      const key = event.key.toLowerCase();
-      if (key === "e" || key === "m") { event.preventDefault(); setScreen("machine"); }
-      else if (key === "x" && state.capsules >= 10n) { event.preventDefault(); tenRef.current(); }
-      else if (key === "c") { event.preventDefault(); setScreen("album"); }
-      else if (key === "o") { event.preventDefault(); setScreen("odds"); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   async function action(work: () => Promise<void>, cue?: FriendSoundCue) {
     if (locked.current || paused) return;
@@ -141,7 +145,7 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
   if (!snapshot) {
     return (
       <div className="cf cf-empty" role={error ? "alert" : "status"}>
-        {error || "Loading the capsule machine…"}
+        {error || "Opening the yard…"}
         {error && <button type="button" disabled={busy || paused} onClick={() => void action(async () => undefined)}>Retry</button>}
       </div>
     );
@@ -160,80 +164,82 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
   const totalCount = snapshot.inventory.reduce((sum, amount) => sum + amount, 0n);
   const totalValue = snapshot.inventory.reduce((sum, amount, index) => sum + amount * definition.outcomes[index].reward, 0n);
   const unique = snapshot.inventory.reduce((sum, amount) => sum + (amount > 0n ? 1 : 0), 0);
+  const rarePlus = capsuleItems.reduce((sum, item, index) => sum + (snapshot.inventory[index] > 0n && isRarePlus(item.rarity as Rarity) ? 1 : 0), 0);
+  const vaultLevel = Math.min(3, rarePlus);
+  const epicIndexes = capsuleItems.map((item, index) => (isEpicPlus(item.rarity as Rarity) ? index : -1)).filter(index => index >= 0);
   const selectedItem = capsuleItems[selectedIndex];
   const selectedValue = definition.outcomes[selectedIndex].reward;
   const selectedCount = snapshot.inventory[selectedIndex];
   const isPreview = client.mode === "preview";
+  const tierUnlocked = (unlock: number) => vaultLevel >= unlock;
 
   const navigate = (next: Screen) => { if (!cranking && !busy && !paused) { setScreen(next); setError(""); setMessage(""); sound.current?.play("select"); } };
-  const openShop = () => { navigate("shop"); };
+  const openShop = () => { setQuantity("5"); navigate("shop"); };
   const toggleSound = () => { const next = !muted; setMuted(next); sound.current?.setMuted(next); if (!next) void sound.current?.unlock(); };
 
-  async function settlePull(playId: bigint) {
-    const settled = await client.settle(playId);
+  function interact(id: string) {
+    if (id === "shop") return openShop();
+    if (id === "vault") return navigate("vault");
+    if (id === "album") return navigate("album");
+    const machine = MACHINES.find(value => value.id === id);
+    if (machine) {
+      if (!tierUnlocked(machine.unlock)) { setMessage(`${machine.label} needs vault level ${machine.unlock}.`); return; }
+      setMachineTier(machine.tier);
+      setResult(null);
+      setDrewCount(1);
+      setCranking(false);
+      return navigate("machine");
+    }
+  }
+
+  function presentResult(settled: GamePlay) {
     if (!alive.current) return;
     setReady(false);
-    if (settled.outcomeId === null) {
-      setResult(null); setCranking(false);
-      setMessage(`Pull #${playId} is waiting for its result. Finish that pull; no extra capsule is used.`);
-      return;
+    if (settled.outcomeId && isEpicPlus(CAPSULE_ART[settled.outcomeId - 1].rarity as Rarity)) {
+      const id = settled.outcomeId;
+      setSeals(previous => (id in previous ? previous : { ...previous, [id]: Date.now() + 8000 }));
     }
     setResult(settled);
     setCranking(true);
     setMessage("");
   }
 
-  const crank = () => action(async () => {
-    if (pendingPlay) throw new Error(`Pull #${pendingPlay.id} is pending. Finish that pull first.`);
-    setResult(null); setReady(false); setCranking(false);
-    const [play] = await client.play(1n);
-    if (!play) throw new Error("The pull was not returned. Refresh and try again.");
-    await settlePull(play.id);
+  async function settlePull(playId: bigint) {
+    const settled = await client.settle(playId);
+    if (!alive.current) return;
+    if (settled.outcomeId === null) {
+      setResult(null); setCranking(false);
+      setMessage(`Pull #${playId} is waiting for its result. Finish it at the machine.`);
+      return;
+    }
+    presentResult(settled);
+  }
+
+  const pull = () => action(async () => {
+    if (pendingPlay) throw new Error(`Pull #${pendingPlay.id} is pending. Finish it first.`);
+    setResult(null); setReady(false); setCranking(false); setDrewCount(1);
+    const plays = await client.play(BigInt(machineTier));
+    const settled: GamePlay[] = [];
+    for (const play of plays) {
+      const value = await client.settle(play.id);
+      if (value.outcomeId !== null) settled.push(value);
+    }
+    if (!settled.length) throw new Error("The pull returned no result. Refresh and try again.");
+    settled.sort((a, b) => definition.outcomes[b.outcomeId! - 1].reward > definition.outcomes[a.outcomeId! - 1].reward ? 1 : -1);
+    if (!alive.current) return;
+    setDrewCount(settled.length);
+    presentResult(settled[0]);
   }, "action-start");
   const resumePull = () => pendingPlay && action(() => settlePull(pendingPlay.id), "action-start");
-
-  const pullTen = () => action(async () => {
-    setBurst(null);
-    const plays = await client.play(10n);
-    const results: GamePlay[] = [];
-    for (const play of plays) {
-      const settled = await client.settle(play.id);
-      if (settled.outcomeId !== null) results.push(settled);
-    }
-    if (!alive.current) return;
-    if (!results.length) { setMessage("No pull results were returned."); return; }
-    let best = 0n;
-    for (const play of results) if (play.outcomeId) best = definition.outcomes[play.outcomeId - 1].reward > best ? definition.outcomes[play.outcomeId - 1].reward : best;
-    setBurst(results);
-    setScreen("burst");
-    sound.current?.play(cueFor(best));
-  }, "purchase");
-  tenRef.current = pullTen;
-  hot.current = { screen, busy, paused, capsules: snapshot?.consumables ?? 0n };  // keep hotkeys current
 
   const redeemOne = (outcomeId: number) => action(async () => {
     await client.redeem(outcomeId, 1n);
     setMessage(`Redeemed 1 ${definition.outcomes[outcomeId - 1].name} for ${rf(definition.outcomes[outcomeId - 1].reward)}.`);
   }, "reward");
 
-  const redeemAll = (results: readonly GamePlay[], from: Screen) => action(async () => {
-    const counts = new Map<number, bigint>();
-    for (const play of results) if (play.outcomeId !== null) counts.set(play.outcomeId, (counts.get(play.outcomeId) ?? 0n) + 1n);
-    let total = 0n;
-    for (const [outcomeId, amount] of counts) {
-      const value = definition.outcomes[outcomeId - 1].reward;
-      if (value === 0n) continue;
-      await client.redeem(outcomeId, amount);
-      total += value * amount;
-    }
-    if (alive.current) { setScreen(from === "burst" ? "scene" : from); setBurst(null); setMessage(`Redeemed the whole pull for ${rf(total)}.`); }
-  }, "reward");
-
   const soundButton = <button className="cf-icon" type="button" aria-label={muted ? "Turn sound on" : "Mute sound"} aria-pressed={!muted} onClick={toggleSound}><SoundIcon muted={muted} /></button>;
   const feedback = <p className="cf-feedback" role={error ? "alert" : "status"}>{error || message}</p>;
-  const panelTitle = screen === "machine" ? "Capsule machine" : screen === "shop" ? "Capsule dispenser" : screen === "reveal" ? "Your pull" : screen === "album" ? "Capsule album" : screen === "odds" ? "Odds" : screen === "burst" ? "×10 pull" : "Settings";
-
-  const spriteRows = spriteState === "ready" && sprites ? spriteFrame(sprites, "down", false, frame, "right").frame.rows : null;
+  const panelTitle = screen === "shop" ? "Key shop" : screen === "machine" ? `Machine · Luck ×${machineTier}` : screen === "vault" ? "Capsule vault" : screen === "album" ? "Capsule album" : screen === "odds" ? "Odds" : "Settings";
 
   const album = (
     <div className="cf-collection-panel">
@@ -241,7 +247,7 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
         <div className="cf-collection-best">
           <span>{unique}/20 discovered</span>
           <span className="cf-scroll-hint">Scroll for all friends ↓</span>
-          <span>{totalCount.toString()} kept</span>
+          <span>{totalCount.toString()} kept · {rf(totalValue)}</span>
         </div>
         <div className="cf-collection" aria-label="Capsule album">
           {capsuleItems.map((item, index) => (
@@ -268,63 +274,35 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
 
   return (
     <section className="cf" aria-label={definition.name} aria-busy={busy} data-screen={screen}>
-      <div className="cf-scene" inert={screen !== "scene" || paused || undefined}>
-        <div className="cf-scene-inner">
-          <div className="cf-friend">
-            {spriteRows ? (
-              <FriendPortrait rows={spriteRows} size={150} label={`Your Rare Friend, token ${friendId.toString()}`} />
-            ) : (
-              <div className={`cf-art-status${spriteState === "error" ? " is-error" : ""}`}>
-                {spriteState === "error" ? (
-                  <>
-                    <p>Friend artwork did not load.</p>
-                    <button type="button" disabled={busy || paused} onClick={() => setSpriteRevision(value => value + 1)}>Retry artwork</button>
-                  </>
-                ) : <p>Loading Friend artwork…</p>}
-              </div>
-            )}
-            <span className="cf-friend-tag">#{friendId.toString()} · {sprites ? sprites.familyName : "Rare Friend"}</span>
-          </div>
-          <div className="cf-machine">
-            <CapsuleMachine ready={cranking} />
-            <span className="cf-machine-caption">{definition.consumable} machine</span>
-          </div>
-        </div>
-
+      <div className="cf-world-ui" inert={screen !== "world" || paused || undefined}>
+        <GameWorld key={worldRevision} world={yard} spawn={spawn} interactions={worldInteractions} friendId={snapshot.friendId} paused={paused || screen !== "world"} reducedMotion={reduceMotion} onInteract={id => interact(id)} />
         <GameHud
           balance={snapshot.rfBalance}
           currency={currency}
           itemCount={snapshot.consumables}
-          itemCountLabel="capsules"
+          itemCountLabel="keys"
           inventoryCount={totalCount}
-          quest={pendingPlay ? `Pull #${pendingPlay.id} is pending · Finish it at the machine` : undefined}
+          quest={pendingPlay ? `Pull #${pendingPlay.id} is pending · Finish it at a machine` : `Vault level ${vaultLevel} · ${vaultLevel >= 1 ? "Machine ×8 unlocked" : "Find a rare+ to unlock Machine ×8"}`}
           onInventory={() => navigate("album")}
           labels={{ balance: isPreview ? "Preview RF" : "Friend wallet RF", inventory: "Capsule album" }}
         />
         <button className="cf-settings cf-icon" type="button" aria-label="Settings" onClick={() => navigate("settings")}><SettingsIcon /></button>
         <div className="cf-sound">{soundButton}</div>
-
-        <ActivityPrompt className="cf-machine-prompt" label="Capsule machine" detail={pendingPlay ? `Finish pull #${pendingPlay.id}` : observation(snapshot.consumables)} active={screen === "scene"} onClick={paused || busy ? undefined : () => navigate("machine")} />
-        {snapshot.consumables >= 10n && <ActivityPrompt className="cf-ten-prompt" label="Crank ×10" detail="Ten capsules at once" onClick={paused || busy ? undefined : () => void pullTen()} keyLabel="X" />}
-        <nav className="cf-quickbar" aria-label="Quick actions">
-          <button type="button" disabled={paused || busy} onClick={() => navigate("machine")}>Capsule machine</button>
-          <button type="button" disabled={paused || busy || snapshot.consumables < 10n} onClick={() => void pullTen()}>Crank ×10</button>
-        </nav>
-        {screen === "scene" && (error || message) && <div className="cf-world-feedback">{feedback}</div>}
         <span className="cf-accessible" data-testid="capsules">{snapshot.consumables.toString()}</span>
         <span className="cf-accessible" data-testid="balance">{rf(snapshot.rfBalance)}</span>
+        {screen === "world" && (error || message) && <div className="cf-world-feedback">{feedback}</div>}
       </div>
 
-      {screen === "machine" || screen === "reveal" ? (
-        <GameMenu title={panelTitle} onClose={cranking || busy || screen === "reveal" ? undefined : () => navigate("scene")}>
+      {screen === "machine" ? (
+        <GameMenu title={panelTitle} onClose={cranking || busy ? undefined : () => navigate("world")}>
           <ExperiencePanel
-            stage={screen === "reveal" ? "reward" : cranking ? "working" : "activity"}
+            stage={cranking || result ? "reward" : "activity"}
             itemCatalog={[capsuleItem, ...capsuleItems]}
             itemCounts={{ capsule: snapshot.consumables }}
             selectableItemIds={pendingPlay ? [] : ["capsule"]}
             selectedItemId="capsule"
             activeItemId="capsule"
-            itemCost={pendingPlay ? 0n : 1n}
+            itemCost={pendingPlay ? 0n : BigInt(machineTier)}
             balance={snapshot.rfBalance}
             currency={currency}
             onSelectItem={() => {}}
@@ -333,26 +311,25 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
             rewardValue={pulledValue}
             revealKey={result?.id.toString()}
             reducedMotion={reduceMotion}
-            onRevealComplete={() => sound.current?.play(cueFor(pulledValue))}
-            onAction={!busy && !paused ? () => { void (pendingPlay ? resumePull() : crank()); } : undefined}
+            onRevealComplete={() => sound.current?.play(cueForRarity(pulledItem?.rarity as Rarity ?? "common"))}
+            onAction={!busy && !paused ? () => { void (pendingPlay ? resumePull() : pull()); } : undefined}
             onShop={openShop}
-            onResolve={!busy && !paused ? () => { setCranking(false); setScreen("reveal"); sound.current?.play("impact"); } : undefined}
-            onKeep={!busy && !paused ? () => { setSelectedIndex((pulledId ?? 1) - 1); setScreen("album"); setMessage(`Kept ${pulledItem?.name}.`); } : undefined}
-            onSellReward={pulledValue > 0n && !busy && !paused ? () => void action(async () => { await client.redeem(pulledId!, 1n); setScreen("scene"); setMessage(`Redeemed ${pulledItem?.name} for ${rf(pulledValue)}.`); }, "reward") : undefined}
-            onClose={cranking || busy || screen === "reveal" ? undefined : () => navigate("scene")}
+            onKeep={!busy && !paused ? () => { setCranking(false); setSelectedIndex((pulledId ?? 1) - 1); setScreen("album"); setMessage(`Kept ${pulledItem?.name}.`); } : undefined}
+            onSellReward={pulledValue > 0n && !busy && !paused ? () => void action(async () => { await client.redeem(pulledId!, 1n); setCranking(false); setResult(null); setScreen("world"); setMessage(`Redeemed ${pulledItem?.name} for ${rf(pulledValue)}.`); }, "reward") : undefined}
+            onClose={busy ? undefined : () => { setCranking(false); setResult(null); navigate("world"); }}
             status={message}
             error={error}
             labels={{
-              activityLocation: "Capsule machine",
+              activityLocation: `Machine · Luck ×${machineTier}`,
               rewardLocation: "Your pull",
-              activityTitle: pendingPlay ? `Pull #${pendingPlay.id} pending` : "Choose a capsule",
-              activityDescription: pendingPlay ? "Finish this pull to see its result. Your capsule is already used." : "One capsule. One Capsule Friend.",
-              action: pendingPlay ? `Finish pull #${pendingPlay.id}` : "Crank · 1 capsule",
-              activityCost: pendingPlay ? "No extra capsule" : "One capsule per pull",
-              openShop: "Visit capsule dispenser",
-              missingItems: "Load capsules from the dispenser to start.",
+              activityTitle: pendingPlay ? `Pull #${pendingPlay.id} pending` : `Load ${machineTier} key${machineTier === 1 ? "" : "s"}`,
+              activityDescription: pendingPlay ? "Finish this pull to see its result. Your keys are already used." : `${machineTier} draw${machineTier === 1 ? "" : "s"} per crank. Every friend is kept in your album; the rarest leads the reveal.`,
+              action: pendingPlay ? `Finish pull #${pendingPlay.id}` : `Crank · ${machineTier} key${machineTier === 1 ? "" : "s"}`,
+              activityCost: pendingPlay ? "No extra keys" : `${machineTier} key${machineTier === 1 ? "" : "s"} per pull`,
+              openShop: "Visit the key shop",
+              missingItems: `This machine needs ${machineTier} key${machineTier === 1 ? "" : "s"}. Buy them at the key shop.`,
               workingTitle: "Cranking…",
-              workingDescription: "The dome is rattling.",
+              workingDescription: "The machine is drawing.",
               readyTitle: "Capsule ready!",
               readyDescription: "Something dropped into the tray.",
               resolve: "Open capsule",
@@ -361,19 +338,19 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
               keep: "Keep friend",
               sell: `Redeem · ${rf(pulledValue)}`,
               reveal: "Skip reveal",
-              close: "Close Capsule machine",
+              close: "Close machine",
             }}
             slots={{
               activityArt: <CapsuleMachine />,
               workingArt: <CapsuleMachine ready={ready} />,
               headerActions: soundButton,
-              footer: <span>Capsule · {rf(definition.price)} at the dispenser</span>,
-              rewardDetails: screen === "reveal" && pulledId ? <span>{definition.outcomes[pulledId - 1].chanceBps / 100}% chance · Fixed value. No expiry.</span> : undefined,
+              footer: <span>Machine ×{machineTier} · {machineTier} key{machineTier === 1 ? "" : "s"} per pull</span>,
+              rewardDetails: drewCount > 1 ? <span>Best of {drewCount} · {drewCount - 1} more kept in your album</span> : <span>{definition.outcomes[(pulledId ?? 1) - 1].chanceBps / 100}% chance · Fixed value. No expiry.</span>,
             }}
           />
         </GameMenu>
       ) : screen === "shop" ? (
-        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("scene")}>
+        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("world")}>
           <div className="cf-shop-panel">
             <div className="cf-shop-stock">
               <div className="cf-capsule-card">
@@ -383,69 +360,72 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
                 <small>{snapshot.consumables.toString()} owned</small>
               </div>
               <div className="cf-shop-copy">
-                <h3>One capsule.<br />One friend.</h3>
-                <p>Each capsule opens one Capsule Friend. Every capsule reserves {rf(maxPrize)} of backing.</p>
+                <h3>One key.<br />One crank.</h3>
+                <p>Keys open any machine. Each machine spends its own number of keys and draws that many Capsule Friends, keeping the rarest.</p>
                 <label className="cf-quantity">Quantity <input inputMode="numeric" type="number" min="1" max="99" value={quantity} onChange={event => setQuantity(event.target.value)} /></label>
                 <button className="cf-link" type="button" onClick={() => navigate("odds")}>View odds</button>
               </div>
             </div>
-            <div className="cf-summary"><span>{count.toString()} capsule{count === 1n ? "" : "s"}</span><strong>{rf(cost)}</strong></div>
+            <div className="cf-summary"><span>{count.toString()} key{count === 1n ? "" : "s"}</span><strong>{rf(cost)}</strong></div>
             <div className="cf-actions">
-              <button className="cf-primary" type="button" disabled={busy || paused || !canBuy} onClick={() => void action(async () => { await client.buy(count); setMessage(`Loaded ${count} capsule${count === 1n ? "" : "s"}.`); }, "purchase")}>Load capsules <span aria-hidden="true">↗</span></button>
-              <button type="button" disabled={busy} onClick={() => navigate("machine")}>To the machine <span aria-hidden="true">→</span></button>
+              <button className="cf-primary" type="button" disabled={busy || paused || !canBuy} onClick={() => void action(async () => { await client.buy(count); setMessage(`Bought ${count} key${count === 1n ? "" : "s"}.`); }, "purchase")}>Buy keys <span aria-hidden="true">↗</span></button>
+              <button type="button" disabled={busy} onClick={() => navigate("world")}>Back to the yard <span aria-hidden="true">→</span></button>
             </div>
-            <p className="cf-feedback" role={error ? "alert" : "status"}>{error || message || (!hasBacking ? "Loads paused: not enough free backing. Loaded capsules stay playable." : snapshot.rfBalance < cost ? "Not enough simulated RF." : count === 0n ? "Choose 1 to 99 capsules." : `${rf(snapshot.rfBalance)} available · simulated RF`)}</p>
+            <p className="cf-feedback" role={error ? "alert" : "status"}>{error || message || (!hasBacking ? "Sales paused: not enough free backing. Owned keys stay usable." : snapshot.rfBalance < cost ? "Not enough simulated RF." : count === 0n ? "Choose 1 to 99 keys." : `${rf(snapshot.rfBalance)} available · simulated RF`)}</p>
+          </div>
+        </GameMenu>
+      ) : screen === "vault" ? (
+        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("world")}>
+          <div className="cf-text-panel">
+            <p><strong>Vault level {vaultLevel}</strong> · {rarePlus} rare+ friend{rarePlus === 1 ? "" : "s"} discovered. Each vault level unlocks a luckier machine: level 1 unlocks <strong>Machine ×8</strong>.</p>
+            <p className="cf-note">Epic and legendary friends are sealed in the vault for a short incubation before they hatch. The timer is cosmetic and session-only — owned friends are always safe and redeemable from the album.</p>
+            <div className="cf-vault-list">
+              {epicIndexes.map(index => {
+                const item = capsuleItems[index];
+                const readyAt = seals[index + 1];
+                const left = readyAt ? Math.max(0, Math.ceil((readyAt - now) / 1000)) : 0;
+                const owned = snapshot.inventory[index] > 0n;
+                const sealed = owned && left > 0;
+                return (
+                  <div className="cf-vault-row" key={item.id} data-owned={owned}>
+                    <ItemArt item={item} />
+                    <div><strong>{item.name}</strong><small>{item.rarity} · {rf(definition.outcomes[index].reward)}</small></div>
+                    <span className={`cf-vault-state${sealed ? " is-sealed" : ""}`}>{owned ? (sealed ? `Incubating ${left}s` : "Hatched") : "Not found"}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <button type="button" onClick={() => navigate("album")}>Open the capsule album</button>
+            {feedback}
           </div>
         </GameMenu>
       ) : screen === "album" ? (
-        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("scene")}>{album}</GameMenu>
+        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("world")}>{album}</GameMenu>
       ) : screen === "odds" ? (
-        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("scene")}>
+        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("world")}>
           <div className="cf-text-panel">
-            <p>{rf(definition.price)} per capsule · Expected return {rf(definition.outcomes.reduce((sum, outcome) => sum + outcome.reward * BigInt(outcome.chanceBps), 0n) / 10_000n)} · ~10% pool edge</p>
+            <p>{rf(definition.price)} per key · Expected return {rf(definition.outcomes.reduce((sum, outcome) => sum + outcome.reward * BigInt(outcome.chanceBps), 0n) / 10_000n)} per key · ~10% pool edge</p>
+            <p className="cf-note">Machine ×1 / ×2 / ×4 / ×8 spend that many keys and draw that many times into your album, with the rarest draw leading the reveal. Every key returns the same expected value; higher machines give more chances at a rare friend in one crank.</p>
             <table>
               <thead><tr><th>Capsule Friend</th><th>Rarity</th><th>Chance</th><th>Redeem</th></tr></thead>
               <tbody>{definition.outcomes.map((outcome, index) => <tr key={outcome.name}><th scope="row">{outcome.name}</th><td>{CAPSULE_ART[index].rarity}</td><td>{outcome.chanceBps / 100}%</td><td>{rf(outcome.reward)}</td></tr>)}</tbody>
             </table>
-            <p>Every capsule reserves {rf(maxPrize)}. Kept friends remain backed until redeemed, with no expiry.</p>
-            <p>Free stake: <span data-testid="free-stake">{rf(snapshot.freeStake)}</span></p>
-          </div>
-        </GameMenu>
-      ) : screen === "burst" && burst ? (
-        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => { setBurst(null); navigate("scene"); }}>
-          <div className="cf-burst-panel">
-            <div className="cf-burst-grid">
-              {burst.map(play => {
-                const id = play.outcomeId ?? 1;
-                const item = capsuleItems[id - 1];
-                return <div className="cf-burst-card" key={play.id.toString()} data-rarity={item.rarity}><ItemArt item={item} /><span>{item.name}</span><small>{rf(definition.outcomes[id - 1].reward)}</small></div>;
-              })}
-            </div>
-            <div className="cf-actions">
-              <button className="cf-primary" type="button" disabled={busy || paused} onClick={() => { setBurst(null); navigate("album"); }}>Keep all</button>
-              <button type="button" disabled={busy || paused} onClick={() => void redeemAll(burst, "burst")}>Redeem all for RF</button>
-            </div>
-            {feedback}
+            <p>Every key reserves {rf(maxPrize)}. Kept friends remain backed until redeemed, with no expiry. Free stake: <span data-testid="free-stake">{rf(snapshot.freeStake)}</span></p>
           </div>
         </GameMenu>
       ) : screen === "settings" ? (
-        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("scene")}>
+        <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("world")}>
           <div className="cf-text-panel">
-            <p>{isPreview ? "Local preview. Simulated RF and outcomes; no live transactions. Progress resets on reload." : "Robinhood mainnet. Purchases and rewards use this Friend's canonical RF wallet."}</p>
+            <p>{isPreview ? "Local preview. Simulated RF, keys and outcomes; no live transactions. Progress resets on reload." : "Robinhood mainnet. Purchases and rewards use this Friend's canonical RF wallet."}</p>
             <button type="button" aria-pressed={!muted} onClick={toggleSound}>{muted ? "Sound off" : "Sound on"}</button>
             <label className="cf-motion"><input type="checkbox" checked={reduceMotion} onChange={event => setReduceMotion(event.target.checked)} /> Reduce motion</label>
             <button type="button" onClick={() => navigate("odds")}>Odds</button>
-            <p>An eligible hardwired Generations NFT on Robinhood mainnet is required to play. Wallet and ownership checks stay in the SDK runtime.</p>
+            <button type="button" onClick={() => setWorldRevision(value => value + 1)}>Reset walking position</button>
+            <p className="cf-note">Walk with WASD, arrow keys or tap a destination. Press E near a station. An eligible hardwired Generations NFT on Robinhood mainnet is required to play.</p>
             {feedback}
           </div>
         </GameMenu>
       ) : null}
     </section>
   );
-}
-
-function observation(capsules: bigint): string {
-  if (capsules >= 10n) return `${capsules.toString()} capsules ready`;
-  if (capsules > 0n) return `${capsules.toString()} capsule${capsules === 1n ? "" : "s"} ready`;
-  return "1 capsule · 1 RF";
 }
