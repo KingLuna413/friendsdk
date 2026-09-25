@@ -28,6 +28,8 @@ const MACHINES = [
   { id: "m4", label: "Machine ×8", tier: 8, unlock: 1 },
 ] as const;
 
+const SPEND_TIERS = [5n * RF, 10n * RF, 15n * RF, 20n * RF] as const;
+const SPEND_LABELS = ["Spender I", "Spender II", "Spender III", "Spender IV"] as const;
 const isRarePlus = (rarity: Rarity) => rarity === "rare" || rarity === "epic" || rarity === "legendary";
 const isEpicPlus = (rarity: Rarity) => rarity === "epic" || rarity === "legendary";
 const cueForRarity = (rarity: Rarity): FriendSoundCue => (rarity === "legendary" ? "reveal-legendary" : rarity === "rare" || rarity === "epic" ? "reveal-rare" : "reveal-common");
@@ -82,6 +84,11 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<GamePlay | null>(null);
   const [drewCount, setDrewCount] = useState(1);
+  const [spentRF, setSpentRF] = useState(0n);
+  const [redeemedRF, setRedeemedRF] = useState(0n);
+  const [boughtKeys, setBoughtKeys] = useState(0n);
+  const [pullCount, setPullCount] = useState(0);
+  const [bestId, setBestId] = useState<number | null>(null);
   const [cranking, setCranking] = useState(false);
   const [ready, setReady] = useState(false);
   const [muted, setMuted] = useState(true);
@@ -172,6 +179,9 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
   const selectedCount = snapshot.inventory[selectedIndex];
   const isPreview = client.mode === "preview";
   const tierUnlocked = (unlock: number) => vaultLevel >= unlock;
+  const netRF = spentRF - redeemedRF;
+  const badges = SPEND_TIERS.map((tier, index) => ({ tier, label: SPEND_LABELS[index], earned: spentRF >= tier }));
+  const nextBadge = badges.find(badge => !badge.earned);
 
   const navigate = (next: Screen) => { if (!cranking && !busy && !paused) { setScreen(next); setError(""); setMessage(""); sound.current?.play("select"); } };
   const openShop = () => { setQuantity("5"); navigate("shop"); };
@@ -228,12 +238,16 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
     settled.sort((a, b) => definition.outcomes[b.outcomeId! - 1].reward > definition.outcomes[a.outcomeId! - 1].reward ? 1 : -1);
     if (!alive.current) return;
     setDrewCount(settled.length);
+    setPullCount(value => value + 1);
+    const top = settled[0].outcomeId;
+    if (top) setBestId(previous => (previous === null || definition.outcomes[top - 1].reward > definition.outcomes[previous - 1].reward ? top : previous));
     presentResult(settled[0]);
   }, "action-start");
   const resumePull = () => pendingPlay && action(() => settlePull(pendingPlay.id), "action-start");
 
   const redeemOne = (outcomeId: number) => action(async () => {
     await client.redeem(outcomeId, 1n);
+    setRedeemedRF(value => value + definition.outcomes[outcomeId - 1].reward);
     setMessage(`Redeemed 1 ${definition.outcomes[outcomeId - 1].name} for ${rf(definition.outcomes[outcomeId - 1].reward)}.`);
   }, "reward");
 
@@ -266,7 +280,7 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
       </div>
       <div className="cf-actions">
         <button className="cf-primary" type="button" aria-label={`Redeem one ${selectedItem.name}`} disabled={busy || paused || selectedCount === 0n || selectedValue === 0n} onClick={() => void redeemOne(selectedIndex + 1)}>Redeem one · {rf(selectedValue)}</button>
-        <button type="button" disabled={busy || paused || totalValue === 0n} onClick={() => void action(async () => { for (let index = 0; index < capsuleItems.length; index++) if (snapshot.inventory[index] > 0n && definition.outcomes[index].reward > 0n) await client.redeem(index + 1, snapshot.inventory[index]); setMessage("Redeemed every kept friend."); }, "reward")}>Redeem all · {rf(totalValue)}</button>
+        <button type="button" disabled={busy || paused || totalValue === 0n} onClick={() => void action(async () => { for (let index = 0; index < capsuleItems.length; index++) if (snapshot.inventory[index] > 0n && definition.outcomes[index].reward > 0n) await client.redeem(index + 1, snapshot.inventory[index]); setRedeemedRF(value => value + totalValue); setMessage("Redeemed every kept friend."); }, "reward")}>Redeem all · {rf(totalValue)}</button>
       </div>
       {feedback}
     </div>
@@ -282,7 +296,7 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
           itemCount={snapshot.consumables}
           itemCountLabel="keys"
           inventoryCount={totalCount}
-          quest={pendingPlay ? `Pull #${pendingPlay.id} is pending · Finish it at a machine` : `Vault level ${vaultLevel} · ${vaultLevel >= 1 ? "Machine ×8 unlocked" : "Find a rare+ to unlock Machine ×8"}`}
+          quest={pendingPlay ? `Pull #${pendingPlay.id} is pending · Finish it at a machine` : `RF spent ${rf(spentRF)} · ${pullCount} pull${pullCount === 1 ? "" : "s"} · vault L${vaultLevel}`}
           onInventory={() => navigate("album")}
           labels={{ balance: isPreview ? "Preview RF" : "Friend wallet RF", inventory: "Capsule album" }}
         />
@@ -315,7 +329,7 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
             onAction={!busy && !paused ? () => { void (pendingPlay ? resumePull() : pull()); } : undefined}
             onShop={openShop}
             onKeep={!busy && !paused ? () => { setCranking(false); setSelectedIndex((pulledId ?? 1) - 1); setScreen("album"); setMessage(`Kept ${pulledItem?.name}.`); } : undefined}
-            onSellReward={pulledValue > 0n && !busy && !paused ? () => void action(async () => { await client.redeem(pulledId!, 1n); setCranking(false); setResult(null); setScreen("world"); setMessage(`Redeemed ${pulledItem?.name} for ${rf(pulledValue)}.`); }, "reward") : undefined}
+            onSellReward={pulledValue > 0n && !busy && !paused ? () => void action(async () => { await client.redeem(pulledId!, 1n); setRedeemedRF(value => value + pulledValue); setCranking(false); setResult(null); setScreen("world"); setMessage(`Redeemed ${pulledItem?.name} for ${rf(pulledValue)}.`); }, "reward") : undefined}
             onClose={busy ? undefined : () => { setCranking(false); setResult(null); navigate("world"); }}
             status={message}
             error={error}
@@ -368,7 +382,7 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
             </div>
             <div className="cf-summary"><span>{count.toString()} key{count === 1n ? "" : "s"}</span><strong>{rf(cost)}</strong></div>
             <div className="cf-actions">
-              <button className="cf-primary" type="button" disabled={busy || paused || !canBuy} onClick={() => void action(async () => { await client.buy(count); setMessage(`Bought ${count} key${count === 1n ? "" : "s"}.`); }, "purchase")}>Buy keys <span aria-hidden="true">↗</span></button>
+              <button className="cf-primary" type="button" disabled={busy || paused || !canBuy} onClick={() => void action(async () => { await client.buy(count); setSpentRF(value => value + cost); setBoughtKeys(value => value + count); setMessage(`Bought ${count} key${count === 1n ? "" : "s"} for ${rf(cost)}.`); }, "purchase")}>Buy keys <span aria-hidden="true">↗</span></button>
               <button type="button" disabled={busy} onClick={() => navigate("world")}>Back to the yard <span aria-hidden="true">→</span></button>
             </div>
             <p className="cf-feedback" role={error ? "alert" : "status"}>{error || message || (!hasBacking ? "Sales paused: not enough free backing. Owned keys stay usable." : snapshot.rfBalance < cost ? "Not enough simulated RF." : count === 0n ? "Choose 1 to 99 keys." : `${rf(snapshot.rfBalance)} available · simulated RF`)}</p>
@@ -378,6 +392,22 @@ export default function CapsuleFriends({ friendId, client, paused }: GameCompone
         <GameMenu title={panelTitle} onClose={busy || paused ? undefined : () => navigate("world")}>
           <div className="cf-text-panel">
             <p><strong>Vault level {vaultLevel}</strong> · {rarePlus} rare+ friend{rarePlus === 1 ? "" : "s"} discovered. Each vault level unlocks a luckier machine: level 1 unlocks <strong>Machine ×8</strong>.</p>
+            <div className="cf-ledger">
+              <h3>Token activity ledger</h3>
+              <dl>
+                <div><dt>Keys bought</dt><dd>{boughtKeys.toString()}</dd></div>
+                <div><dt>RF spent</dt><dd>{rf(spentRF)}</dd></div>
+                <div><dt>RF redeemed</dt><dd>{rf(redeemedRF)}</dd></div>
+                <div><dt>Net RF (spent − redeemed)</dt><dd>{rf(netRF)}</dd></div>
+                <div><dt>Pulls</dt><dd>{pullCount.toString()}</dd></div>
+                <div><dt>Best pull</dt><dd>{bestId ? capsuleItems[bestId - 1].name : "—"}</dd></div>
+              </dl>
+              <div className="cf-badges">
+                {badges.map(badge => <span key={badge.label} className="cf-badge" data-earned={badge.earned}>{badge.label}<small>{rf(badge.tier)}</small></span>)}
+              </div>
+              {nextBadge && <p className="cf-note">Spend {rf(nextBadge.tier - spentRF)} more to earn {nextBadge.label}.</p>}
+              {!nextBadge && <p className="cf-note">All spend badges earned. The pool thanks you.</p>}
+            </div>
             <p className="cf-note">Epic and legendary friends are sealed in the vault for a short incubation before they hatch. The timer is cosmetic and session-only — owned friends are always safe and redeemable from the album.</p>
             <div className="cf-vault-list">
               {epicIndexes.map(index => {
