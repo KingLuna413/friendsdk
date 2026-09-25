@@ -118,6 +118,15 @@ separate odds tables, and the vault incubation is a session-only presentation.
 Separate key types, per-machine odds tables, persistent timers and on-chain vault
 upgrades are future integration work, not part of this preview.
 
+## Token activity
+
+The **Capsule vault** holds a session **Token activity ledger** that makes RF
+spending visible: keys bought, **RF spent**, RF redeemed, **net RF
+(spent − redeemed)**, pulls and best pull. **Spend badges** (Spender I–IV at
+5 / 10 / 15 / 20 RF) reward heavier spending, and the HUD shows the running
+RF spent. RF spent leaves the Friend wallet for the community pool; only
+redeemed rewards return. This is the game's Token Activity surface.
+
 ## Artwork
 
 - The player's Rare Friend uses its **canonical on-chain pixels**, rendered by
