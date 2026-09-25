@@ -1,4 +1,4 @@
-/* Capsule Friends — Rare Friends paper/ink theme over the SDK chrome. */
+/* Capsule Friends — Rare Friends paper/ink theme over the SDK world + chrome. */
 
 .cf {
   --paper: #eee;
@@ -86,100 +86,50 @@
   white-space: nowrap;
 }
 
-/* ---------- scene ---------- */
-.cf-scene {
+/* ---------- world overlay ---------- */
+.cf-world-ui {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background-image: radial-gradient(circle at 1px 1px, #11111114 1px, transparent 0);
-  background-size: 22px 22px;
 }
-.cf-scene-inner {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  padding: 34px 24px 74px;
-}
-.cf-friend {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.cf-friend-pixels {
-  filter: drop-shadow(4px 4px 0 #1111);
-}
-.cf-friend-tag {
-  max-width: 100%;
-  padding: 3px 8px;
-  border: 1px solid var(--ink);
+.cf .rf-world-view {
   background: var(--paper);
-  box-shadow: 2px 2px 0 var(--ink);
-  font-size: 9px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.cf-machine {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.cf-machine-art {
-  width: min(230px, 78%);
-  max-height: 300px;
   color: var(--ink);
 }
-.cf-machine-art[data-ready="true"] {
-  animation: cf-rattle 0.5s steps(2, end) infinite;
+.cf .rf-world-prompt {
+  border-width: 1px;
+  padding: 6px 10px;
+  box-shadow: 3px 3px 0 var(--ink);
+  font: 700 10px/1.15 var(--game-font);
 }
-.cf-machine-caption {
-  padding: 3px 9px;
-  border: 1px solid var(--ink);
+.cf .rf-world-prompt small {
+  margin-top: 2px;
+  font-size: 8px;
+}
+.cf .rf-world-prompt:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+}
+.cf .rf-world-prompt:enabled {
+  background: var(--signal);
+}
+.cf .rf-world-loading {
   background: var(--paper);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.cf-art-status {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 16px;
-  text-align: center;
-  color: #666;
-}
-.cf-art-status.is-error {
   color: var(--ink);
+  font-family: var(--game-font);
 }
-.cf-world-feedback {
-  position: absolute;
-  left: 16px;
-  right: 84px;
-  bottom: 66px;
-  padding: 8px;
+.cf .rf-world-loading button {
   border: 1px solid var(--ink);
-  background: var(--paper);
+  background: var(--signal);
+  font-family: var(--game-font);
 }
-.cf-quickbar {
-  display: none;
-}
-
-/* ---------- hud ---------- */
 .cf .rf-game-hud {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 .cf .rf-game-hud-top {
-  inset: 16px 66px auto 16px;
+  inset: 14px 62px auto 14px;
 }
 .cf .rf-game-hud button {
   pointer-events: auto;
@@ -196,10 +146,10 @@
 .cf .cf-icon {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   min-height: 0;
-  padding: 10px;
+  padding: 9px;
   background: var(--paper);
   box-shadow: 2px 2px 0 var(--ink);
 }
@@ -210,36 +160,28 @@
 }
 .cf-settings {
   position: absolute;
-  right: 16px;
-  top: 16px;
+  right: 14px;
+  top: 14px;
 }
 .cf-sound {
   position: absolute;
-  bottom: 16px;
-  right: 16px;
+  bottom: 56px;
+  right: 14px;
 }
-.cf .rf-game-hotspot {
+.cf-world-feedback {
   position: absolute;
-  min-height: 44px;
-  box-shadow: 3px 3px 0 var(--ink);
-  transform: translate(-50%, -50%);
-}
-.cf .rf-game-hotspot[data-active="true"] {
-  background: var(--ink);
-  color: var(--paper);
-}
-.cf-machine-prompt {
-  left: 73%;
-  top: 74%;
-}
-.cf-ten-prompt {
-  left: 73%;
-  top: 86%;
+  left: 14px;
+  right: 68px;
+  bottom: 96px;
+  padding: 8px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 2px 2px 0 var(--ink);
 }
 
 /* ---------- menu chrome ---------- */
 .cf .rf-frame-scrim {
-  padding: 34px 18px;
+  padding: 30px 16px;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   font-family: var(--game-font);
@@ -334,8 +276,16 @@
   flex: 1 1 150px;
   max-height: 190px;
 }
+.cf-machine-art {
+  width: min(230px, 90%);
+  max-height: 260px;
+  color: var(--ink);
+}
+.cf-machine-art[data-ready="true"] {
+  animation: cf-rattle 0.5s steps(2, end) infinite;
+}
 .cf .rf-game-working-art .cf-machine-art {
-  width: min(190px, 100%);
+  width: min(180px, 100%);
 }
 
 /* ---------- shop ---------- */
@@ -551,55 +501,49 @@
   color: #666;
 }
 
-/* ---------- ×10 burst ---------- */
-.cf-burst-panel {
-  display: grid;
-  height: 100%;
-  grid-template-rows: minmax(0, 1fr) 52px 28px;
-  gap: 10px;
-  padding: 16px 20px 8px;
-}
-.cf-burst-grid {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+/* ---------- vault ---------- */
+.cf-vault-list {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
-.cf-burst-card {
-  min-width: 0;
-  min-height: 0;
+.cf-vault-row {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 16px 14px;
-  gap: 3px;
-  justify-items: center;
-  padding: 10px 4px 6px;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
   border: 1px solid var(--ink);
+  background: var(--paper);
 }
-.cf-burst-card > svg {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  max-width: 84px;
+.cf-vault-row > svg {
+  width: 56px;
+  height: 56px;
 }
-.cf-burst-card span {
-  font-size: 8px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.cf-vault-row[data-owned="false"] > svg {
+  opacity: 0.22;
+}
+.cf-vault-row div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cf-vault-row small {
+  color: #666;
+  font-size: 10px;
+}
+.cf-vault-state {
+  padding: 4px 8px;
+  border: 1px solid var(--ink);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   white-space: nowrap;
 }
-.cf-burst-card small {
-  font-size: 8px;
-  color: #666;
-}
-.cf-burst-card:is([data-rarity="rare"], [data-rarity="epic"], [data-rarity="legendary"]) {
+.cf-vault-state.is-sealed {
   background: var(--signal);
   border-color: var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
-}
-.cf-burst-card:is([data-rarity="rare"], [data-rarity="epic"], [data-rarity="legendary"]) small {
-  color: var(--ink);
 }
 
 /* ---------- text panels ---------- */
@@ -611,6 +555,10 @@
   overflow: auto;
   max-height: 100%;
   overscroll-behavior: contain;
+}
+.cf-note {
+  color: #666;
+  font-size: 11px;
 }
 .cf-motion {
   display: flex;
@@ -646,51 +594,11 @@
 
 /* ---------- responsive ---------- */
 @container capsule (max-width: 620px) {
-  .cf-scene-inner {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto;
-    gap: 10px;
-    padding: 46px 14px 150px;
-  }
-  .cf-quickbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 8px;
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: 50px;
-  }
-  .cf-quickbar button {
-    min-height: 44px;
-    padding: 6px;
-    background: var(--paper);
-    box-shadow: 2px 2px 0 var(--ink);
-    font-size: 11px;
-  }
-  .cf-machine-prompt,
-  .cf-ten-prompt {
-    display: none;
-  }
-  .cf-friend-pixels {
-    width: 84px !important;
-    height: 84px !important;
-  }
-  .cf-machine-art {
-    width: min(150px, 52%);
-  }
-  .cf-machine-prompt {
-    left: 50%;
-    top: 88%;
-  }
-  .cf-world-feedback {
-    bottom: 110px;
-  }
   .cf .rf-frame-scrim {
     padding: 8px;
   }
   .cf .rf-frame-menu {
-    width: min(100%, 100%);
+    width: 100%;
     height: 100%;
   }
   .cf .rf-frame-menu-heading {
@@ -709,10 +617,6 @@
   .cf-collection-scroll {
     grid-template-rows: 20px minmax(420px, 1fr) auto;
   }
-  .cf-burst-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-template-rows: repeat(3, minmax(0, 1fr));
-  }
   .cf-shop-panel {
     padding: 10px 12px 6px;
     gap: 8px;
@@ -720,7 +624,7 @@
   }
   .cf-shop-stock {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 130px auto;
+    grid-template-rows: 128px auto;
     gap: 10px;
   }
   .cf-capsule-card {
